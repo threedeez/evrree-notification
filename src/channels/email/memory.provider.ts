@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type {
-  EmailProvider,
-  NormalizedEmail,
-  ProviderContext,
-} from "../../types.js";
+import type { EmailProvider, NormalizedEmail } from "../../types";
 
 /** Stores every sent message in memory. Used by createTestNotifier(). */
 export class MemoryEmailProvider implements EmailProvider {
@@ -11,7 +7,7 @@ export class MemoryEmailProvider implements EmailProvider {
   readonly sent: NormalizedEmail[] = [];
   private failNextError: Error | null = null;
 
-  async send(msg: NormalizedEmail, _ctx: ProviderContext) {
+  async send(msg: NormalizedEmail) {
     if (this.failNextError) {
       const err = this.failNextError;
       this.failNextError = null;

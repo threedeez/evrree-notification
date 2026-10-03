@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { PushProvider, PushMessage, ProviderContext } from "../../types";
+import type { PushProvider, PushMessage } from "../../types";
 
 export class MemoryPushProvider implements PushProvider {
   readonly name = "memory";
   readonly sent: PushMessage[] = [];
   private failNextError: Error | null = null;
 
-  async send(msg: PushMessage, _ctx: ProviderContext) {
+  async send(msg: PushMessage) {
     if (this.failNextError) {
       const err = this.failNextError;
       this.failNextError = null;

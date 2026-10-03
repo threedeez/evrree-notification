@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { SmsProvider, NormalizedSms, ProviderContext } from "../../types";
+import type { SmsProvider, NormalizedSms } from "../../types";
 
 export class MemorySmsProvider implements SmsProvider {
   readonly name = "memory";
   readonly sent: NormalizedSms[] = [];
   private failNextError: Error | null = null;
 
-  async send(msg: NormalizedSms, _ctx: ProviderContext) {
+  async send(msg: NormalizedSms) {
     if (this.failNextError) {
       const err = this.failNextError;
       this.failNextError = null;

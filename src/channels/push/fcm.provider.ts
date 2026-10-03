@@ -1,10 +1,6 @@
 import { Channels, NotificationErrorCode } from "../../common/index.js";
 import { NotificationError } from "../../errors.js";
-import type {
-  PushProvider,
-  PushMessage,
-  ProviderContext,
-} from "../../types.js";
+import type { PushProvider, PushMessage } from "../../types";
 
 export interface FcmProviderOptions {
   serviceAccount: {
@@ -96,7 +92,7 @@ export class FcmPushProvider implements PushProvider {
     );
   }
 
-  async send(msg: PushMessage, _ctx: ProviderContext) {
+  async send(msg: PushMessage) {
     const app = await this.getApp();
     const messaging = app.messaging();
 
