@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm build
+
+      # AC2: importing built output works with both require() and import
+      - name: Smoke test require/import
+        run: |
+          node -e "const { createNotifier } = require('./dist/index.cjs'); console.log(typeof createNotifier)"
+          node --input-type=module -e "import { createNotifier } from './dist/index.js'; console.log(typeof createNotifier)"
+
+      - run: pnpm test
