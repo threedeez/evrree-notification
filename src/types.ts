@@ -143,6 +143,7 @@ export interface EmailProvider {
     ctx: ProviderContext,
   ): Promise<{ providerMessageId?: string }>;
   verify?(): Promise<void>;
+  close?(): Promise<void>;
 }
 
 export interface SmsProvider {
@@ -152,6 +153,7 @@ export interface SmsProvider {
     ctx: ProviderContext,
   ): Promise<{ providerMessageId?: string }>;
   verify?(): Promise<void>;
+  close?(): Promise<void>;
 }
 
 export interface PushProvider {

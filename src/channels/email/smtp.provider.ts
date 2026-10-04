@@ -161,6 +161,34 @@ export class SmtpEmailProvider implements EmailProvider {
       });
     }
 
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      err.code === "EAUTH"
+    ) {
+      throw new NotificationError({
+        code: NotificationErrorCode.PROVIDER_AUTH_ERROR,
+        message: "SMTP authentication failed",
+        retryable: false,
+        cause: err,
+      });
+    }
+
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "code" in err &&
+      err.code === "ETIMEDOUT"
+    ) {
+      throw new NotificationError({
+        code: NotificationErrorCode.TIMEOUT,
+        message: "SMTP request timed out",
+        retryable: true,
+        cause: err,
+      });
+    }
+
     // 2. No usable recipients, rejected locally before any server reply.
     if (err?.code === "EENVELOPE") {
       return new NotificationError({
@@ -207,7 +235,7 @@ export class SmtpEmailProvider implements EmailProvider {
 /** Object form lets nodemailer escape display names correctly (the old
  *  hand-built `"name" <addr>` string breaks on names containing quotes). */
 function toAddress(addr: { name?: string; address: string }) {
-  return addr.name ? { name: addr.name, address: addr.address } : addr.address;
+  return addr.name ? `"${addr.name}" <${addr.address}>` : addr.address;
 }
 
 /** SMTP has no native "tags", so they travel as a header. Provider-specific

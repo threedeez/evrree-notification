@@ -27,6 +27,7 @@ import {
   buildEmailProviders,
   buildPushProviders,
   buildSmsProviders,
+  htmlToText,
   validateConfig,
 } from "./common/helper";
 
@@ -64,6 +65,8 @@ interface DeliverArgs<TMsg, TRes> {
 // ---------------------------------------------------------------------------
 // Notifier
 // ---------------------------------------------------------------------------
+
+const SMS_MAX_6_SEGMENTS = 918;
 
 export class Notifier {
   readonly templates: {
@@ -162,10 +165,15 @@ export class Notifier {
         channel: "email",
       });
     }
+
+    if (!msg.text && msg.html) {
+      msg.text = htmlToText(msg.html);
+    }
+
     if (!msg.subject || !(msg.html || msg.text)) {
       throw new NotificationError({
-        code: "INVALID_MESSAGE",
-        channel: "email",
+        code: NotificationErrorCode.INVALID_MESSAGE,
+        channel: Channels.EMAIL,
         message: "email requires subject and html or text",
       });
     }
@@ -173,6 +181,14 @@ export class Notifier {
     const to = normalizeEmailAddressList(msg.to);
     const from = msg.from ?? this.config.email!.from;
     const recipients = to.map((a) => redactEmail(a.address));
+
+    if (to.length === 0) {
+      throw new NotificationError({
+        code: NotificationErrorCode.INVALID_RECIPIENT,
+        channel: Channels.EMAIL,
+        message: "at least one recipient is required",
+      });
+    }
 
     if (this.config.dryRun) {
       return {
@@ -205,13 +221,37 @@ export class Notifier {
   ): Promise<SendResult> {
     if (this.smsProviders.length === 0) {
       throw new NotificationError({
-        code: "CHANNEL_NOT_CONFIGURED",
-        channel: "sms",
+        code: NotificationErrorCode.CHANNEL_NOT_CONFIGURED,
+        channel: Channels.SMS,
       });
     }
+
+    if (!msg.text?.trim()) {
+      throw new NotificationError({
+        code: NotificationErrorCode.INVALID_MESSAGE,
+        channel: Channels.SMS,
+        message: "SMS text is required",
+      });
+    }
+
     const toList = Array.isArray(msg.to) ? msg.to : [msg.to];
     const to = normalizePhoneNumberList(toList, this.config.defaultCountryCode);
     const recipients = to.map(redactPhone);
+
+    if (msg.text.length > SMS_MAX_6_SEGMENTS) {
+      this.logger.warn(
+        "[notifier] SMS text exceeds 6 segments; it may be costly or truncated",
+        { length: msg.text.length },
+      );
+    }
+
+    if (to.length === 0) {
+      throw new NotificationError({
+        code: NotificationErrorCode.INVALID_RECIPIENT,
+        channel: Channels.SMS,
+        message: "at least one recipient is required",
+      });
+    }
 
     if (this.config.dryRun) {
       return {
@@ -224,7 +264,7 @@ export class Notifier {
     }
 
     return this.deliver({
-      channel: "sms",
+      channel: Channels.SMS,
       providers: this.smsProviders,
       recipients,
       opts,
@@ -332,16 +372,24 @@ export class Notifier {
       lastProvider = provider;
       try {
         const { result: res } = await withRetry(
-          (attempt, callSignal) => {
+          async (attempt, callSignal) => {
             attempts++;
-            return provider.send(msg, {
-              signal: callSignal, // caller signal merged with the per-attempt timeout
-              logger: this.logger,
-              attempt,
-            });
+
+            try {
+              return await provider.send(msg, {
+                signal: callSignal,
+                logger: this.logger,
+                attempt,
+              });
+            } catch (err) {
+              throw this.toNotificationError(err, channel, provider.name);
+            }
           },
           this.retryConfig,
-          { signal: opts?.signal, timeoutMs: this.config.timeoutMs },
+          {
+            signal: opts?.signal,
+            timeoutMs: this.config.timeoutMs,
+          },
         );
 
         const result: SendResult = {
@@ -355,11 +403,30 @@ export class Notifier {
           sentAt: new Date(),
           ...extra?.(res),
         };
+
         await this.runHook("onSent", result);
         return result;
       } catch (err) {
         lastErr = err;
-        if (opts?.signal?.aborted || isCallerError(err)) break; // no fallback
+
+        if (opts?.signal?.aborted) {
+          const result: SendResult = {
+            id: randomUUID(),
+            channel,
+            status: "failed",
+            provider: provider.name,
+            attempts,
+            recipients,
+            error: this.toNotificationError(err, channel, provider.name),
+          };
+
+          await this.runHook("onFailed", result);
+          return result;
+        }
+        if (isCallerError(err)) {
+          throw err;
+        }
+
         this.logger.warn(
           `[notifier] ${channel} provider ${provider.name} exhausted, trying next`,
           { code: (err as NotificationError)?.code },

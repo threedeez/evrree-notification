@@ -2,14 +2,18 @@ import "reflect-metadata";
 import { Injectable, Module } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NOTIFIER, NotificationModule } from "../src/nestjs/index.js";
-import { Notifier } from "../src/notifier.js";
+import {
+  InjectNotifier,
+  NOTIFIER,
+  NotificationModule,
+} from "../src/nestjs/index";
+import { Notifier } from "../src/notifier";
 
 // A consumer service, exactly as another Evrree service would write one:
 // pull the notifier in with @InjectNotifier() and use it normally.
 @Injectable()
 class GreetingService {
-  constructor(private readonly notifier: Notifier) {}
+  constructor(@InjectNotifier() private readonly notifier: Notifier) {}
 
   async sendWelcome() {
     return this.notifier.email.send({
@@ -125,6 +129,9 @@ describe("NotificationModule.forRoot (AC35)", () => {
                   send: async () => ({}),
                   verify: async () => {
                     throw new Error("down");
+                  },
+                  close: () => {
+                    throw new Error("cannot close");
                   },
                 },
               },

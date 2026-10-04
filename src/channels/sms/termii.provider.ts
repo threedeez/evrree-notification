@@ -91,24 +91,21 @@ export class TermiiSmsProvider implements SmsProvider {
     // 2xx. A success always carries message_id. If we can't read one we can't
     // tell whether the SMS went out, so don't retry (a retry could double-send).
     let messageId: string | undefined;
+
     try {
       const data = (await res.json()) as { message_id?: unknown };
+
       if (typeof data?.message_id === "string" && data.message_id) {
         messageId = data.message_id;
       }
     } catch {
-      // fall through to the missing-id error below
+      // The request succeeded, but the response body was not valid JSON.
+      // Treat it as successful to avoid potentially sending the SMS twice.
     }
 
-    if (!messageId) {
-      throw this.fail(
-        NotificationErrorCode.PROVIDER_ERROR,
-        "termii returned a success status without a message_id",
-        false,
-        res.status,
-      );
-    }
-    return { providerMessageId: messageId };
+    return {
+      ...(messageId ? { providerMessageId: messageId } : {}),
+    };
   }
 
   // ---- error construction --------------------------------------------------
@@ -159,14 +156,16 @@ export class TermiiSmsProvider implements SmsProvider {
 
   private async fromHttpError(res: Response): Promise<NotificationError> {
     const status = res.status;
+
     let text = "";
     try {
       text = await res.text();
     } catch {
-      // body unreadable; the status alone is enough to classify
+      // ignore, we just want to include whatever we can in the error
     }
 
     const retryable = status === 408 || status === 429 || status >= 500;
+
     const code =
       status === 401 || status === 403
         ? NotificationErrorCode.PROVIDER_AUTH_ERROR
@@ -179,9 +178,7 @@ export class TermiiSmsProvider implements SmsProvider {
       status,
       {
         status,
-        // redact BEFORE truncating so a key can't survive by straddling the cut
         body: this.redact(text).slice(0, MAX_ERROR_BODY_CHARS),
-        // read by withRetry for 429s
         retryAfterMs: parseRetryAfter(res.headers.get("retry-after")),
       },
     );

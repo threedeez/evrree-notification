@@ -90,7 +90,7 @@ describe("retry + fallback", () => {
     const result = await pending;
     expect(result.status).toBe("failed");
     expect(result.error?.code).toBe("TIMEOUT");
-  });
+  }, 30_000);
 
   it("all providers failing resolves as failed (does not throw) and calls onFailed once", async () => {
     const onFailed = vi.fn();

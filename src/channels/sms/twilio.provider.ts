@@ -34,15 +34,26 @@ export class TwilioSmsProvider implements SmsProvider {
         Body: msg.text,
       });
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${auth}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body,
-        signal: ctx.signal,
-      });
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${auth}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body,
+          signal: ctx.signal,
+        });
+      } catch (err) {
+        throw new NotificationError({
+          code: NotificationErrorCode.PROVIDER_ERROR,
+          channel: Channels.SMS,
+          provider: this.name,
+          retryable: true,
+          cause: err,
+        });
+      }
 
       if (!res.ok) {
         throw new NotificationError({

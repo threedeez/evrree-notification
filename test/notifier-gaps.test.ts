@@ -322,12 +322,18 @@ describe("Notifier.close()", () => {
       email: {
         from: { address: "a@b.com" },
         providers: [
-          { type: "custom", instance: { name: "e", send: async () => ({}) } },
+          {
+            type: "custom",
+            instance: { name: "e", send: async () => ({}), close: closeEmail },
+          },
         ],
       },
       sms: {
         providers: [
-          { type: "custom", instance: { name: "s", send: async () => ({}) } },
+          {
+            type: "custom",
+            instance: { name: "s", send: async () => ({}), close: closeSms },
+          },
         ],
       },
       logger: silentLogger,
@@ -339,7 +345,8 @@ describe("Notifier.close()", () => {
 
   it("a provider whose close() throws is caught and logged, and does not stop other providers from closing", async () => {
     const error = vi.fn();
-    const closeOk = vi.fn();
+    const closeOk = vi.fn().mockResolvedValue(undefined);
+
     const notifier = createNotifier({
       appName: "X",
       defaultCountryCode: "NG",
@@ -351,22 +358,35 @@ describe("Notifier.close()", () => {
             instance: {
               name: "broken",
               send: async () => ({}),
+              close: () => {
+                throw new Error("cannot close");
+              },
             },
           },
         ],
       },
       sms: {
         providers: [
-          { type: "custom", instance: { name: "ok", send: async () => ({}) } },
+          {
+            type: "custom",
+            instance: {
+              name: "ok",
+              send: async () => ({}),
+              close: closeOk,
+            },
+          },
         ],
       },
       logger: { ...silentLogger, error },
     });
+
     await expect(notifier.close()).resolves.toBeUndefined();
+
     expect(error).toHaveBeenCalledWith(
       "[notifier] error closing a provider",
       expect.any(Error),
     );
+
     expect(closeOk).toHaveBeenCalledTimes(1);
   });
 });

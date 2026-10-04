@@ -1,3 +1,4 @@
+import { NotificationErrorCode } from "./common";
 import { NotificationError } from "./errors";
 import type { RetryConfig } from "./types";
 
@@ -52,7 +53,10 @@ export async function withRetry<T>(
 
   for (let attempt = 1; attempt <= config.attempts; attempt++) {
     if (opts.signal?.aborted) {
-      throw new NotificationError({ code: "ABORTED", retryable: false });
+      throw new NotificationError({
+        code: NotificationErrorCode.ABORTED,
+        retryable: false,
+      });
     }
 
     const callSignal = opts.timeoutMs
