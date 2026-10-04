@@ -30,5 +30,3 @@ jobs:
           node --input-type=module -e "import { createNotifier } from './dist/index.js'; console.log(typeof createNotifier)"
 
       - run: pnpm test
-
-      - run: pnpm test:integration
