@@ -8,6 +8,53 @@ export const DEFAULT_RETRY: RetryConfig = {
   maxDelayMs: 5000,
 };
 
+export const DEFAULT_TIMEOUT_MS = 10_000;
+
+async function runAttempt<T>(
+  fn: RetryableCall<T>,
+  attempt: number,
+  timeoutMs: number,
+  outer?: AbortSignal,
+): Promise<T> {
+  const ctrl = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onOuterAbort: (() => void) | undefined;
+
+  const guard = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      // Reject first so this error wins over whatever the provider throws on abort.
+      reject(
+        new NotificationError({
+          code: "TIMEOUT",
+          retryable: true,
+          message: `provider timed out after ${timeoutMs}ms`,
+        }),
+      );
+      ctrl.abort();
+    }, timeoutMs);
+
+    if (outer) {
+      onOuterAbort = () => {
+        reject(
+          new NotificationError({
+            code: NotificationErrorCode.ABORTED,
+            retryable: false,
+          }),
+        );
+        ctrl.abort(outer.reason);
+      };
+      outer.addEventListener("abort", onOuterAbort, { once: true });
+    }
+  });
+
+  try {
+    return await Promise.race([fn(attempt, ctrl.signal), guard]);
+  } finally {
+    clearTimeout(timer);
+    if (outer && onOuterAbort) outer.removeEventListener("abort", onOuterAbort);
+  }
+}
+
 /**
  * backoff = min(maxDelayMs, initialDelayMs * 2^(attempt-1)) with +-20% jitter.
  * `attempt` is 1-indexed (the attempt that just failed).
@@ -51,6 +98,8 @@ export async function withRetry<T>(
     opts.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   let lastError: unknown;
 
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
   for (let attempt = 1; attempt <= config.attempts; attempt++) {
     if (opts.signal?.aborted) {
       throw new NotificationError({
@@ -59,12 +108,8 @@ export async function withRetry<T>(
       });
     }
 
-    const callSignal = opts.timeoutMs
-      ? anySignal([opts.signal, AbortSignal.timeout(opts.timeoutMs)])
-      : (opts.signal ?? new AbortController().signal);
-
     try {
-      const result = await fn(attempt, callSignal);
+      const result = await runAttempt(fn, attempt, timeoutMs, opts.signal);
       return { result, attempts: attempt };
     } catch (err) {
       lastError = err;
@@ -91,19 +136,4 @@ export async function withRetry<T>(
 function extractRetryAfterMs(err: NotificationError): number | undefined {
   const cause = err.cause as { retryAfterMs?: number } | undefined;
   return cause?.retryAfterMs;
-}
-
-function anySignal(signals: (AbortSignal | undefined)[]): AbortSignal {
-  const controller = new AbortController();
-  for (const signal of signals) {
-    if (!signal) continue;
-    if (signal.aborted) {
-      controller.abort(signal.reason);
-      break;
-    }
-    signal.addEventListener("abort", () => controller.abort(signal.reason), {
-      once: true,
-    });
-  }
-  return controller.signal;
 }
